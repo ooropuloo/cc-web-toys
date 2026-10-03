@@ -1,0 +1,1338 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>折面投影台</title>
+<style>
+:root{
+  --bg:#0c0b10; --panel:#15141b; --line:#2a2833; --fg:#e9e7ef; --mute:#9a96a8;
+  --acc:#e8ef3c; --acc2:#e0368f; --ok:#5fe3d6;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+  font:14px/1.45 "Microsoft JhengHei","PingFang TC","Noto Sans TC",system-ui,sans-serif}
+#app{display:flex;height:100%}
+#side{width:300px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+  overflow:auto;padding:12px 12px 40px}
+#side h1{font-size:17px;margin:0 0 2px;letter-spacing:.06em}
+#side h1 b{color:var(--acc)}
+#side .sub{color:var(--mute);font-size:12px;margin-bottom:10px}
+fieldset{border:1px solid var(--line);border-radius:8px;margin:0 0 10px;padding:8px 10px 10px}
+legend{color:var(--acc);font-size:12px;padding:0 4px;letter-spacing:.08em}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:5px 0}
+.row label{color:var(--mute);font-size:12px;min-width:52px}
+button,select,input[type=text],input[type=number]{
+  background:#1f1d27;color:var(--fg);border:1px solid #363343;border-radius:6px;
+  padding:5px 9px;font:inherit;font-size:13px}
+button{cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.on{background:var(--acc);color:#111;border-color:var(--acc)}
+button.wide{flex:1}
+input[type=number]{width:70px}
+input[type=text]{width:100%}
+input[type=range]{flex:1}
+input[type=color]{width:34px;height:28px;border:1px solid #363343;background:#1f1d27;border-radius:6px;padding:2px}
+.tabs{display:flex;gap:4px}
+.tabs button{flex:1}
+.hint{color:var(--mute);font-size:12px}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#stageWrap{flex:1;position:relative;background:#050407;min-height:0}
+#view{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#bar{display:flex;gap:6px;align-items:center;padding:8px 10px;border-top:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+#seek{flex:1;min-width:160px}
+#tc{font-variant-numeric:tabular-nums;color:var(--mute);min-width:150px;font-size:12px}
+#build{color:#6f6b7d;font-size:11px;padding:0 10px 6px;background:var(--panel)}
+.segs{display:grid;grid-template-columns:1fr 64px;gap:4px 6px;align-items:center}
+.segs span{font-size:12px;color:var(--mute)}
+body.out #side,body.out #bar,body.out #build{display:none}
+body.side-hidden #side{display:none}
+#bar .main{font-weight:700}
+.nudge button{min-width:40px}
+#btnFactory2{border-color:#7a3a52}
+#autoHint.new{color:var(--acc)}
+#btnAuto.new{background:var(--acc);color:#111;border-color:var(--acc)}
+body.out #stageWrap{background:#000}
+@media (max-width:760px){
+  #app{flex-direction:column}
+  #side{width:auto;max-height:45vh;border-right:0;border-bottom:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>折面<b>投影台</b></h1>
+    <div class="sub">把動畫依節拍「貼」到立體牆的每一個面上</div>
+
+    <fieldset>
+      <legend>畫面</legend>
+      <div class="tabs" id="viewTabs">
+        <button data-v="edit">編輯</button>
+        <button data-v="sim">模擬牆面</button>
+        <button data-v="out">投影輸出</button>
+      </div>
+      <div class="row">
+        <button class="wide" id="btnOutWin">開啟投影視窗（第二螢幕）</button>
+      </div>
+      <div class="row"><label>牆面照片</label><input type="file" id="bgFile" accept="image/*" style="width:180px"></div>
+      <div class="row"><label>照片透明</label><input type="range" id="bgAlpha" min="0" max="1" step="0.05"></div>
+      <div id="autoBox" style="display:none">
+        <div class="hint" id="autoHint">照片已載入：可以讓程式自動找出牆上的面。</div>
+        <div class="row"><button id="btnAuto" class="wide">✦ 自動偵測面</button><button id="btnAutoRe">重新偵測</button></div>
+        <div class="row"><label>細緻度</label><span class="hint">少</span><input type="range" id="autoDetail" min="1" max="10" step="1" value="5"><span class="hint">多</span></div>
+        <div class="row" id="autoApplyRow" style="display:none"><button id="btnAutoApply" class="wide">套用（取代目前的面）</button><button id="btnAutoCancel">取消</button></div>
+        <div class="hint" id="autoStatus"></div>
+      </div>
+      <div class="row"><label>環境光</label><input type="checkbox" id="ambient"><span class="hint">模擬現場彩色燈</span></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>編輯對象</legend>
+      <div class="tabs" id="editTabs">
+        <button data-e="facet">牆面多邊形</button>
+        <button data-e="layer">貼合圖層</button>
+      </div>
+      <div id="facetTools">
+        <div class="row">
+          <button id="btnAddFacet" class="wide">＋ 新增面（點擊描點）</button>
+        </div>
+        <div class="row" id="addTools" style="display:none">
+          <button id="btnUndoPt">↶ 復原上一點</button>
+          <button id="btnFinish" class="wide">✓ 完成這個面</button>
+          <button id="btnCancelAdd">取消</button>
+        </div>
+        <div class="row nudge" id="nudgeRow">
+          <span class="hint" id="nudgeInfo">點一下頂點選取，再用方向鍵微調：</span>
+          <button data-n="-1,0">←</button><button data-n="0,-1">↑</button><button data-n="0,1">↓</button><button data-n="1,0">→</button>
+          <label class="hint"><input type="checkbox" id="nudgeBig">一次 10 格</label>
+        </div>
+        <div class="row">
+          <button id="btnDelFacet" class="wide">刪除選取的面</button>
+          <button id="btnClearFacets">全部清空</button>
+        </div>
+        <div class="hint">拖曳頂點可校正位置，相鄰面共用的點會一起移動。新增時點回第一點、或按「完成這個面」收合。</div>
+      </div>
+      <div id="layerTools" style="display:none">
+        <div class="row"><select id="layerSel" style="flex:1"></select></div>
+        <div class="row">
+          <button id="btnAddText">＋ 文字</button>
+          <button id="btnAddImg">＋ 圖片</button>
+          <button id="btnDelLayer">刪除</button>
+        </div>
+        <input type="file" id="imgFile" accept="image/*" style="display:none">
+        <div class="row" id="rowText"><label>文字</label><input type="text" id="layerText"></div>
+        <div class="row"><label>顏色</label><input type="color" id="layerColor"><label>出場段落</label>
+          <select id="layerStage">
+            <option value="char">角色</option><option value="title">標題</option><option value="fill">填色</option><option value="lines">線稿</option>
+          </select></div>
+        <div class="row"><label>手繪抖動</label><input type="range" id="layerBoil" min="0" max="6" step="0.5"></div>
+        <div class="hint">拖四個角做透視校正，拖中間整塊移動。</div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>節奏與段落（拍）</legend>
+      <div class="row"><label>BPM</label><input type="number" id="bpm" min="40" max="220" step="1"><button id="btnTap">點拍子</button></div>
+      <div class="segs" id="segs"></div>
+      <div class="row"><label>配色</label><span id="palette" style="display:flex;gap:4px"></span></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>音樂</legend>
+      <div class="row"><input type="file" id="audioFile" accept="audio/*" style="width:100%"></div>
+      <div class="row"><button id="btnMic" class="wide">用麥克風抓節拍</button></div>
+      <div class="hint" id="audioInfo">未載入音樂：用 BPM 產生節拍。</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>存檔</legend>
+      <div class="row">
+        <button id="btnExport" class="wide">匯出設定</button>
+        <button id="btnImport" class="wide">匯入設定</button>
+        <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+      </div>
+      <div class="row">
+        <button id="btnRec" class="wide">錄下畫面（WebM）</button>
+        <button id="btnReset">載入範例</button>
+      </div>
+      <div class="row"><button id="btnFactory" class="wide">↺ 回到初始狀態（清除所有設定）</button></div>
+    </fieldset>
+  </aside>
+
+  <main id="main">
+    <div id="stageWrap"><canvas id="view"></canvas></div>
+    <div id="bar">
+      <button id="btnSide" class="main">☰ 設定</button>
+      <button id="btnPlay">▶ 播放</button>
+      <button id="btnRew">⏮ 從頭</button>
+      <input type="range" id="seek" min="0" max="1000" value="0">
+      <span id="tc">0.00 s</span>
+      <span id="segJump" style="display:flex;gap:4px"></span>
+      <button id="btnFull" title="全螢幕">⛶</button>
+      <button id="btnFactory2" title="回到初始狀態">↺ 重設</button>
+    </div>
+    <div id="build">reel2 build 2026-10-03 r3 · 折面投影台 · 純本機 Canvas 2D，無外部套件</div>
+  </main>
+</div>
+
+<script>
+'use strict';
+const BUILD = 'reel2 build 2026-10-03 r3';
+const qs = new URLSearchParams(location.search);
+const IS_OUT = location.hash === '#out';
+if (IS_OUT) document.body.classList.add('out');
+
+/* ---------- 小工具 ---------- */
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeBack = t => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hashStr(s) { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+/* ---------- 範例場景 ---------- */
+const STAGES = [
+  ['dark', '暗場'], ['lines', '線稿描繪'], ['fill', '色塊填充'], ['char', '角色登場'], ['title', '標題字卡'], ['out', '收尾']
+];
+function demoState() {
+  const V = {
+    A: [430, 140], B: [640, 90], C: [860, 120], D: [1060, 170], E: [1180, 300],
+    F: [520, 300], G: [720, 260], H: [930, 290], I: [1090, 400],
+    J: [470, 470], K: [660, 450], L: [860, 480], M: [1020, 560],
+    N: [600, 640], O: [820, 660]
+  };
+  const f = (s, i) => ({ id: 'f' + i, pts: s.split('').map(k => V[k].slice()) });
+  return {
+    v: 1, res: [1280, 720], bpm: 128,
+    beats: { dark: 2, lines: 12, fill: 12, char: 12, title: 8, out: 2 },
+    palette: ['#e0368f', '#5fe3d6', '#e9ee3c', '#8a3bd1'],
+    line: '#e8ef3c',
+    facets: ['ABF', 'BGF', 'BCG', 'CHG', 'CDH', 'DEIH', 'AFJ', 'FGKJ', 'GHLK', 'HIML', 'JKN', 'KLON', 'LMO'].map(f),
+    layers: [
+      { id: 'L1', type: 'img', name: '角色插畫', src: '', stage: 'char', color: '#ffffff', boil: 2.5,
+        q: [[585, 130], [905, 170], [890, 480], [600, 450]] },
+      { id: 'L2', type: 'text', name: '狀聲字', text: '嘩啊！', stage: 'char', color: '#ffffff', boil: 2,
+        q: [[890, 320], [1090, 360], [1078, 470], [880, 435]] },
+      { id: 'L3', type: 'text', name: '標題', text: '閃電落下', stage: 'title', color: '#ff2a4a', boil: 0,
+        q: [[430, 470], [840, 425], [860, 665], [465, 690]] }
+    ],
+    bg: '', bgAlpha: 0.5, ambient: true
+  };
+}
+
+/* ---------- 狀態 / 儲存 ---------- */
+const LS = 'reel2.facetstage.v1';
+let S;
+function loadState() {
+  try { const j = JSON.parse(localStorage.getItem(LS) || 'null'); if (j && j.v === 1) return j; } catch (e) {}
+  return demoState();
+}
+let saveTimer = 0;
+function saveState() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) { console.warn('儲存失敗（可能圖片太大）', e); }
+    broadcast({ kind: 'state', S });
+  }, 150);
+}
+S = qs.has('demo') ? demoState() : loadState();
+
+/* ---------- 跨視窗同步 ---------- */
+let bc = null;
+try { bc = new BroadcastChannel('reel2-facetstage'); } catch (e) {}
+function broadcast(m) { try { bc && bc.postMessage(m); } catch (e) {} }
+
+/* ---------- 時鐘 ---------- */
+const clock = { playing: false, base: 0, at: 0 };
+const audio = new Audio(); audio.loop = true;
+let audioOn = false;
+function now() {
+  if (audioOn && !audio.paused) return audio.currentTime;
+  return clock.playing ? clock.base + (performance.now() - clock.at) / 1000 : clock.base;
+}
+function totalBeats() { return STAGES.reduce((s, [k]) => s + (+S.beats[k] || 0), 0) || 1; }
+function loopSec() { return totalBeats() * 60 / S.bpm; }
+function setTime(t) {
+  clock.base = t; clock.at = performance.now();
+  if (audioOn) { try { audio.currentTime = t % (audio.duration || 1e9); } catch (e) {} }
+  sendClock();
+}
+function play(on) {
+  const t = now();
+  clock.playing = on; clock.base = t; clock.at = performance.now();
+  if (audioOn) { on ? audio.play().catch(() => {}) : audio.pause(); }
+  document.getElementById('btnPlay').textContent = on ? '⏸ 暫停' : '▶ 播放';
+  sendClock();
+}
+function sendClock() { broadcast({ kind: 'clock', playing: clock.playing, t: now(), sent: Date.now() }); }
+
+/* ---------- 節拍偵測 ---------- */
+let actx = null, analyser = null, freq = null, energyAvg = 0, kick = 0, lastKick = 0;
+function ensureCtx() { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); return actx; }
+function attachAnalyser(node) {
+  analyser = actx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.5;
+  node.connect(analyser); freq = new Uint8Array(analyser.frequencyBinCount);
+}
+function audioPulse(dt) {
+  if (!analyser) return null;
+  analyser.getByteFrequencyData(freq);
+  let e = 0; for (let i = 1; i < 10; i++) e += freq[i]; e /= 9 * 255;
+  energyAvg = lerp(energyAvg, e, 0.04);
+  const t = performance.now();
+  if (e > energyAvg * 1.25 + 0.04 && t - lastKick > 180) { kick = 1; lastKick = t; }
+  kick = Math.max(0, kick - dt * 4);
+  return kick;
+}
+
+/* ---------- 時間 → 段落 ---------- */
+function timeline(t) {
+  const tb = totalBeats();
+  let b = (t * S.bpm / 60) % tb; if (b < 0) b += tb;
+  const st = {}; let acc = 0, cur = 'dark', curP = 0;
+  for (const [k] of STAGES) {
+    const d = +S.beats[k] || 0;
+    st[k] = d > 0 ? clamp((b - acc) / d) : (b >= acc ? 1 : 0);
+    st[k + 'Start'] = acc;
+    if (b >= acc && b < acc + d) { cur = k; curP = (b - acc) / d; }
+    acc += d;
+  }
+  return { b, st, cur, curP };
+}
+
+/* ---------- 幾何 ---------- */
+function centroid(p) { let x = 0, y = 0; for (const q of p) { x += q[0]; y += q[1]; } return [x / p.length, y / p.length]; }
+function polyPath(ctx, p) { ctx.beginPath(); p.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); }
+function inPoly(pt, p) {
+  let c = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    const [xi, yi] = p[i], [xj, yj] = p[j];
+    if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+function longestEdgeAngle(p) {
+  let best = 0, ang = 0;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (d > best) { best = d; ang = Math.atan2(b[1] - a[1], b[0] - a[0]); }
+  }
+  return ang;
+}
+function radius(p, c) { return Math.max(...p.map(q => Math.hypot(q[0] - c[0], q[1] - c[1]))); }
+
+/* 透視（Homography）：把單位矩形映到任意四邊形 */
+function solve(A, b) {
+  const n = b.length;
+  for (let i = 0; i < n; i++) {
+    let m = i; for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[m][i])) m = r;
+    [A[i], A[m]] = [A[m], A[i]]; [b[i], b[m]] = [b[m], b[i]];
+    for (let r = i + 1; r < n; r++) { const f = A[r][i] / A[i][i]; for (let c = i; c < n; c++) A[r][c] -= f * A[i][c]; b[r] -= f * b[i]; }
+  }
+  const x = new Array(n);
+  for (let i = n - 1; i >= 0; i--) { let s = b[i]; for (let c = i + 1; c < n; c++) s -= A[i][c] * x[c]; x[i] = s / A[i][i]; }
+  return x;
+}
+function homography(src, dst) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i], [u, v] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  const h = solve(A, b); h.push(1); return h;
+}
+const hApply = (h, x, y) => { const w = h[6] * x + h[7] * y + h[8]; return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w]; };
+
+function drawTri(ctx, img, s0, s1, s2, d0, d1, d2) {
+  const c = [(d0[0] + d1[0] + d2[0]) / 3, (d0[1] + d1[1] + d2[1]) / 3];
+  const g = d => { const dx = d[0] - c[0], dy = d[1] - c[1], l = Math.hypot(dx, dy) || 1; return [d[0] + dx / l * 0.9, d[1] + dy / l * 0.9]; };
+  const e0 = g(d0), e1 = g(d1), e2 = g(d2);
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(e0[0], e0[1]); ctx.lineTo(e1[0], e1[1]); ctx.lineTo(e2[0], e2[1]); ctx.closePath(); ctx.clip();
+  const du1 = s1[0] - s0[0], dv1 = s1[1] - s0[1], du2 = s2[0] - s0[0], dv2 = s2[1] - s0[1];
+  const dx1 = d1[0] - d0[0], dy1 = d1[1] - d0[1], dx2 = d2[0] - d0[0], dy2 = d2[1] - d0[1];
+  const det = du1 * dv2 - du2 * dv1; if (Math.abs(det) < 1e-9) { ctx.restore(); return; }
+  const a = (dx1 * dv2 - dx2 * dv1) / det, cc = (dx2 * du1 - dx1 * du2) / det;
+  const b = (dy1 * dv2 - dy2 * dv1) / det, d = (dy2 * du1 - dy1 * du2) / det;
+  const e = d0[0] - a * s0[0] - cc * s0[1], f = d0[1] - b * s0[0] - d * s0[1];
+  ctx.transform(a, b, cc, d, e, f);
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+}
+function drawWarped(ctx, img, quad, N = 10) {
+  const iw = img.width, ih = img.height;
+  const h = homography([[0, 0], [iw, 0], [iw, ih], [0, ih]], quad);
+  const P = [];
+  for (let j = 0; j <= N; j++) { P[j] = []; for (let i = 0; i <= N; i++) P[j][i] = hApply(h, iw * i / N, ih * j / N); }
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const s00 = [iw * i / N, ih * j / N], s10 = [iw * (i + 1) / N, ih * j / N], s01 = [iw * i / N, ih * (j + 1) / N], s11 = [iw * (i + 1) / N, ih * (j + 1) / N];
+    drawTri(ctx, img, s00, s10, s11, P[j][i], P[j][i + 1], P[j + 1][i + 1]);
+    drawTri(ctx, img, s00, s11, s01, P[j][i], P[j + 1][i + 1], P[j + 1][i]);
+  }
+}
+
+/* ---------- 每個面的內容 ---------- */
+function facetDecor(f, idx) {
+  const r = rng(hashStr(f.id) ^ (idx * 7919));
+  const kinds = ['grid', 'hatch', 'zig', 'grid', 'tri'];
+  return {
+    pattern: kinds[Math.floor(r() * kinds.length)],
+    spacing: 15 + Math.floor(r() * 9),
+    col: Math.floor(r() * 4),
+    col2: Math.floor(r() * 4),
+    shardY: (r() - 0.5) * 0.6, shardAmp: 0.12 + r() * 0.16, shardTeeth: 3 + Math.floor(r() * 4), shardW: 0.16 + r() * 0.18,
+    stripes: r() < 0.45, wipe: r() * Math.PI * 2, mode: (m => m < 0.18 ? 'keep' : m < 0.6 ? 'shard' : 'full')(r())
+  };
+}
+function patternLines(d, R) {
+  const L = [], s = d.spacing;
+  if (d.pattern === 'grid') {
+    for (let x = -R; x <= R; x += s) L.push([[x, -R], [x, R]]);
+    for (let y = -R; y <= R; y += s) L.push([[-R, y], [R, y]]);
+  } else if (d.pattern === 'hatch') {
+    for (let x = -2 * R; x <= 2 * R; x += s * 0.8) L.push([[x, -R], [x + R, R]]);
+  } else if (d.pattern === 'tri') {
+    for (let y = -R; y <= R; y += s * 1.3) L.push([[-R, y], [R, y]]);
+    for (let x = -2 * R; x <= 2 * R; x += s * 1.5) { L.push([[x, -R], [x + R * 0.6, R]]); L.push([[x, -R], [x - R * 0.6, R]]); }
+  } else {
+    for (let k = -2; k <= 2; k++) {
+      const y0 = k * R * 0.38, pts = [];
+      for (let i = 0; i <= 8; i++) pts.push([-R + 2 * R * i / 8, y0 + (i % 2 ? -1 : 1) * R * 0.12]);
+      for (let i = 0; i < pts.length - 1; i++) L.push([pts[i], pts[i + 1]]);
+    }
+  }
+  return L;
+}
+function shardPoly(d, R, yo = 0, wm = 1) {
+  const top = [], bot = [], n = d.shardTeeth * 2;
+  for (let i = 0; i <= n; i++) {
+    const x = -R * 1.1 + 2.2 * R * i / n, y = (d.shardY + yo) * R + (i % 2 ? -1 : 1) * d.shardAmp * R;
+    top.push([x, y]); bot.push([x + R * 0.08, y + d.shardW * wm * R]);
+  }
+  return top.concat(bot.reverse());
+}
+function partialPerimeter(ctx, p, frac) {
+  let total = 0; const seg = [];
+  for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; const l = Math.hypot(b[0] - a[0], b[1] - a[1]); seg.push(l); total += l; }
+  let left = total * frac;
+  ctx.beginPath(); ctx.moveTo(p[0][0], p[0][1]);
+  for (let i = 0; i < p.length && left > 0; i++) {
+    const a = p[i], b = p[(i + 1) % p.length], k = Math.min(1, left / seg[i]);
+    ctx.lineTo(lerp(a[0], b[0], k), lerp(a[1], b[1], k)); left -= seg[i];
+  }
+  ctx.stroke();
+}
+
+/* ---------- 原創手繪角色（預設插畫，可換成自己的圖） ---------- */
+const charCanvas = document.createElement('canvas'); charCanvas.width = 512; charCanvas.height = 512;
+let charSeed = -1;
+function wob(r, a) { return (r() - 0.5) * a; }
+function drawCharacter(seed, boil) {
+  if (seed === charSeed) return charCanvas;
+  charSeed = seed;
+  const c = charCanvas.getContext('2d'), r = rng(seed * 131 + 7), j = () => wob(r, boil * 2.2);
+  c.clearRect(0, 0, 512, 512);
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  const ink = '#1b0f2e';
+  const shape = (pts, fill, w = 7) => {
+    c.beginPath(); pts.forEach((q, i) => { const x = q[0] + j(), y = q[1] + j(); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath();
+    if (fill) { c.fillStyle = fill; c.fill(); } c.lineWidth = w; c.strokeStyle = ink; c.stroke();
+  };
+  const circ = (x, y, rad, fill, w = 7) => {
+    const pts = []; for (let i = 0; i < 18; i++) { const a = i / 18 * Math.PI * 2; pts.push([x + Math.cos(a) * rad, y + Math.sin(a) * rad]); }
+    shape(pts, fill, w);
+  };
+  // 飄動圍巾
+  shape([[200, 300], [90, 268], [40, 300], [120, 318], [60, 350], [190, 340]], '#5fe3d6');
+  // 身體（披風）
+  shape([[190, 290], [330, 300], [360, 430], [300, 470], [200, 465], [160, 420]], '#8a3bd1');
+  shape([[215, 330], [300, 335], [292, 420], [222, 418]], '#e0368f', 5);
+  // 手上的閃電
+  shape([[340, 330], [420, 250], [400, 300], [470, 280], [380, 380], [400, 330]], '#e9ee3c');
+  // 頭與尖髮
+  shape([[150, 190], [170, 110], [205, 150], [230, 80], [262, 140], [300, 70], [318, 150], [360, 120], [350, 200]], '#e9ee3c');
+  circ(255, 215, 92, '#f6e6c8');
+  // 護目鏡
+  shape([[160, 195], [350, 190], [352, 222], [158, 228]], '#e9ee3c', 6);
+  circ(215, 210, 28, '#5fe3d6', 6); circ(298, 207, 28, '#5fe3d6', 6);
+  c.fillStyle = '#ffffff'; c.beginPath(); c.arc(207 + j(), 202 + j(), 7, 0, 7); c.arc(290 + j(), 199 + j(), 7, 0, 7); c.fill();
+  // 嘴
+  shape([[225, 262], [290, 258], [272, 290], [238, 292]], '#e0368f', 6);
+  // 速度線
+  c.lineWidth = 6; c.strokeStyle = '#ffffff';
+  for (let i = 0; i < 4; i++) { const y = 120 + i * 38; c.beginPath(); c.moveTo(20 + j(), y + j()); c.lineTo(110 + j(), y - 14 + j()); c.stroke(); }
+  return charCanvas;
+}
+
+/* ---------- 文字貼圖 ---------- */
+const textCache = new Map();
+function textCanvas(L, seed) {
+  const key = L.text + '|' + L.color + '|' + seed;
+  if (textCache.has(key)) return textCache.get(key);
+  if (textCache.size > 60) textCache.clear();
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 384;
+  const c = cv.getContext('2d'), r = rng(seed * 977 + 3);
+  const chars = [...(L.text || ' ')];
+  const size = Math.min(300, 960 / Math.max(1, chars.length) * 1.05);
+  c.font = `900 ${size}px "Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif`;
+  c.textBaseline = 'middle'; c.lineJoin = 'round';
+  const total = chars.reduce((s, ch) => s + c.measureText(ch).width, 0);
+  let x = (1024 - total) / 2;
+  for (const ch of chars) {
+    const w = c.measureText(ch).width, b = (L.boil || 0) * 2;
+    c.save(); c.translate(x + w / 2 + wob(r, b), 192 + wob(r, b)); c.rotate(wob(r, 0.05 * (L.boil || 0)));
+    c.shadowColor = L.color; c.shadowBlur = size * 0.12;
+    c.lineWidth = size * 0.14; c.strokeStyle = '#140a22'; c.strokeText(ch, -w / 2, 0);
+    c.shadowBlur = 0; c.fillStyle = L.color; c.fillText(ch, -w / 2, 0);
+    c.restore(); x += w;
+  }
+  textCache.set(key, cv); return cv;
+}
+const imgCache = new Map();
+function layerImage(L) {
+  if (!L.src) return null;
+  let im = imgCache.get(L.src);
+  if (!im) { im = new Image(); im.src = L.src; imgCache.set(L.src, im); }
+  return im.complete && im.naturalWidth ? im : null;
+}
+let bgImg = null, bgSrc = '';
+function getBg() {
+  if (S.bg !== bgSrc) { bgSrc = S.bg; bgImg = null; if (S.bg) { const im = new Image(); im.onload = () => { bgImg = im; }; im.src = S.bg; } }
+  return bgImg;
+}
+
+/* ---------- 合成投影畫面 ---------- */
+const proj = document.createElement('canvas');
+const comp = document.createElement('canvas');
+function stagger(P, k, n, s = 1.4) { return clamp((P * (1 + s) - (n > 1 ? k / (n - 1) : 0) * s)); }
+
+function renderProjection(t, pulse) {
+  const [W, H] = S.res;
+  if (proj.width !== W || proj.height !== H) { proj.width = W; proj.height = H; }
+  const c = proj.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  const T = timeline(t), st = T.st;
+  const fade = 1 - st.out;
+  const pal = S.palette;
+  const order = S.facets.map((f, i) => ({ f, i, c: centroid(f.pts) })).sort((a, b) => (a.c[0] + a.c[1] * 0.35) - (b.c[0] + b.c[1] * 0.35));
+  const n = order.length;
+  // 段落切換時的白閃
+  let flash = 0;
+  for (const k of ['lines', 'fill', 'char', 'title']) { const db = T.b - st[k + 'Start']; if (db >= 0 && db < 0.5) flash = Math.max(flash, 1 - db / 0.5); }
+  c.globalAlpha = fade;
+  c.lineJoin = 'round'; c.lineCap = 'round';
+
+  order.forEach((o, k) => {
+    const f = o.f, p = f.pts, d = facetDecor(f, o.i), cen = o.c, R = radius(p, cen) + 4, ang = longestEdgeAngle(p);
+    const lp = stagger(st.lines, k, n), pp = stagger(clamp(st.lines * 1.25 - 0.25), k, n), fp = stagger(st.fill, k, n, 1.8);
+    c.save(); polyPath(c, p); c.clip();
+    c.translate(cen[0], cen[1]); c.rotate(ang);
+    // 面內線稿圖樣（填色後只有少數面保留）
+    const patVis = fp > 0 && d.mode !== 'keep' ? 1 - clamp(fp * 3) : 1;
+    if (pp > 0 && patVis > 0) {
+      const L = patternLines(d, R), m = L.length, show = pp * m;
+      c.strokeStyle = S.line; c.lineWidth = 1.6; c.globalAlpha = fade * patVis * 0.9;
+      c.beginPath();
+      for (let i = 0; i < m && i < show; i++) {
+        const [a, b] = L[i], q = Math.min(1, show - i);
+        c.moveTo(a[0], a[1]); c.lineTo(lerp(a[0], b[0], q), lerp(a[1], b[1], q));
+      }
+      c.stroke();
+    }
+    // 色塊填充：沿隨機方向擦入
+    if (fp > 0 && d.mode !== 'keep') {
+      c.globalAlpha = fade;
+      c.save(); c.rotate(d.wipe);
+      c.beginPath(); c.rect(-R * 1.5, -R * 1.5, 3 * R * easeOut(fp), 3 * R); c.clip();
+      c.rotate(-d.wipe);
+      const shift = st.fill >= 1 ? Math.floor(T.b / 4) : 0;
+      const c1 = (d.col + shift) % pal.length;
+      let c2 = (d.col2 + shift) % pal.length; if (c2 === c1) c2 = (c2 + 1) % pal.length;
+      const stripes = () => {
+        c.strokeStyle = 'rgba(30,8,50,.75)'; c.lineWidth = 3.5; c.beginPath();
+        for (let x = -3 * R; x < 3 * R; x += 10) { c.moveTo(x, -R * 1.5); c.lineTo(x + R * 1.5, R * 1.5); }
+        c.stroke();
+      };
+      if (d.mode === 'full') {
+        c.fillStyle = pal[c1]; c.fillRect(-R * 1.5, -R * 1.5, 3 * R, 3 * R);
+        if (d.stripes) stripes();
+        polyPath(c, shardPoly(d, R)); c.fillStyle = pal[c2]; c.fill();
+        c.lineWidth = 3; c.strokeStyle = 'rgba(20,6,40,.9)'; c.stroke();
+        if (pulse > 0.01) { c.fillStyle = `rgba(255,255,255,${0.16 * pulse})`; c.fillRect(-R * 1.5, -R * 1.5, 3 * R, 3 * R); }
+      } else {
+        // 閃電帶：只打亮一部分，留下黑牆，像電光劈過牆面
+        const bands = [[-0.1, 1.0, c1], [0.55, 0.55, c2]];
+        for (const [yo, wm, ci] of bands) {
+          c.save(); polyPath(c, shardPoly(d, R, yo - 0.25, wm)); c.fillStyle = pal[ci]; c.fill();
+          c.clip(); if (d.stripes && ci === c1) stripes();
+          if (pulse > 0.01) { c.fillStyle = `rgba(255,255,255,${0.2 * pulse})`; c.fillRect(-R * 1.5, -R * 1.5, 3 * R, 3 * R); }
+          c.restore();
+          polyPath(c, shardPoly(d, R, yo - 0.25, wm)); c.lineWidth = 3; c.strokeStyle = 'rgba(20,6,40,.9)'; c.stroke();
+        }
+      }
+      c.restore();
+      // 墨線內框，讓色塊之間分得開
+      c.rotate(-ang); c.translate(-cen[0], -cen[1]);
+      if (d.mode === 'full') { polyPath(c, p); c.strokeStyle = 'rgba(16,4,30,.9)'; c.lineWidth = 9 * easeOut(fp); c.stroke(); }
+      c.translate(cen[0], cen[1]); c.rotate(ang);
+    }
+    if (st.title > 0 && st.out < 1) { c.globalAlpha = fade * (0.1 + 0.3 * pulse) * clamp(st.title * 6); c.fillStyle = '#ff1840'; c.fillRect(-R * 1.5, -R * 1.5, 3 * R, 3 * R); }
+    if (flash > 0) { c.globalAlpha = fade * flash * 0.55; c.fillStyle = '#fff'; c.fillRect(-R * 1.5, -R * 1.5, 3 * R, 3 * R); }
+    c.restore();
+    // 描邊（逐筆畫出）
+    if (lp > 0) {
+      c.globalAlpha = fade * (d.mode === 'shard' ? 1 - 0.7 * fp : 1);
+      c.strokeStyle = S.line; c.lineWidth = 2.6 + 2.2 * pulse;
+      c.shadowColor = S.line; c.shadowBlur = 8 + 10 * pulse;
+      partialPerimeter(c, p, easeOut(lp));
+      c.shadowBlur = 0;
+    }
+  });
+
+  // 貼合圖層
+  for (const L of S.layers) {
+    const sp = st[L.stage] ?? 0; if (sp <= 0) continue;
+    const local = (T.b - st[L.stage + 'Start']) / Math.max(0.01, +S.beats[L.stage] || 1);
+    const boilSeed = L.boil > 0 ? Math.floor(t * 8) : 0;
+    let src = null;
+    if (L.type === 'img') src = layerImage(L) || drawCharacter(boilSeed, L.boil || 0);
+    else src = textCanvas(L, boilSeed);
+    if (!src) continue;
+    // 登場：彈出放大
+    const pop = clamp(local / 0.12), s = L.stage === 'title' ? lerp(1.35, 1, easeOut(pop)) : easeBack(pop);
+    const cq = centroid(L.q);
+    const jit = L.type === 'img' && L.boil ? [Math.sin(boilSeed * 2.3) * L.boil * 0.6, Math.cos(boilSeed * 1.7) * L.boil * 0.6] : [0, 0];
+    const q = L.q.map(v => [cq[0] + (v[0] - cq[0]) * s + jit[0], cq[1] + (v[1] - cq[1]) * s + jit[1]]);
+    let a = fade * clamp(local / 0.05);
+    if (L.stage === 'title') a *= 0.72 + 0.28 * pulse;
+    c.globalAlpha = a;
+    drawWarped(c, src, q, 8);
+  }
+  c.globalAlpha = 1;
+  return proj;
+}
+
+/* ---------- 模擬牆面 ---------- */
+function renderComposite(t, pulse, view) {
+  const [W, H] = S.res;
+  if (comp.width !== W || comp.height !== H) { comp.width = W; comp.height = H; }
+  const c = comp.getContext('2d');
+  const P = renderProjection(t, pulse);
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+  if (view === 'out') { c.drawImage(P, 0, 0); return comp; }
+  const bg = getBg();
+  if (view === 'edit') {
+    c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+    if (bg) { c.globalAlpha = S.bgAlpha; c.drawImage(bg, 0, 0, W, H); c.globalAlpha = 1; }
+    c.globalCompositeOperation = 'lighter'; c.drawImage(P, 0, 0); c.globalCompositeOperation = 'source-over';
+    return comp;
+  }
+  // 模擬：牆面反照率 ×（環境光 + 投影）
+  if (bg) { c.drawImage(bg, 0, 0, W, H); }
+  else {
+    const g = c.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#2b2a31'); g.addColorStop(1, '#141318');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    S.facets.forEach((f, i) => {
+      const r = rng(hashStr(f.id) + 11), l = 70 + r() * 70;
+      polyPath(c, f.pts); c.fillStyle = `rgb(${l},${l},${l + 6})`; c.fill();
+      c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 1.5; c.stroke();
+    });
+  }
+  // 暗房：先把牆壓暗，再加光
+  c.globalCompositeOperation = 'multiply';
+  const amb = c.createLinearGradient(0, 0, W, 0);
+  if (S.ambient) { amb.addColorStop(0, 'rgb(170,80,230)'); amb.addColorStop(0.45, 'rgb(90,90,200)'); amb.addColorStop(1, 'rgb(45,45,85)'); }
+  else { amb.addColorStop(0, 'rgb(40,40,48)'); amb.addColorStop(1, 'rgb(40,40,48)'); }
+  c.fillStyle = amb; c.fillRect(0, 0, W, H);
+  c.globalCompositeOperation = 'screen';
+  c.filter = 'blur(6px)'; c.globalAlpha = 0.55; c.drawImage(P, 0, 0);
+  c.filter = 'none'; c.globalAlpha = 0.95; c.drawImage(P, 0, 0);
+  c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+  // 暗角
+  const v = c.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.95);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.6)');
+  c.fillStyle = v; c.fillRect(0, 0, W, H);
+  return comp;
+}
+
+/* ---------- 自動偵測面：照片 → 平面多邊形 ----------
+   同一個平面受光一致、顏色平滑；兩個面交界（折線）會有明暗跳變。
+   流程：縮圖 → Lab → 保邊平滑 → 梯度 → SLIC 超像素 → 依「共用邊界的平均梯度」由弱到強合併
+   → 清掉碎塊 → 外輪廓追蹤 → Douglas–Peucker 簡化成 3–8 點 → 相鄰面的角點吸附成同一點。 */
+const yieldUI = () => new Promise(r => setTimeout(r, 0));
+function loadImg(src) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; }); }
+
+async function detectFacets(src, detail = 5, prog = () => {}, outRes = S.res) {
+  const t0 = performance.now();
+  let lastY = t0;
+  const maybeYield = async () => { const t = performance.now(); if (t - lastY > 30) { await yieldUI(); lastY = performance.now(); } };
+  const im = await loadImg(src);
+  const LONG = 360, k = LONG / Math.max(im.naturalWidth, im.naturalHeight);
+  const w = Math.max(24, Math.round(im.naturalWidth * k)), h = Math.max(24, Math.round(im.naturalHeight * k)), N = w * h;
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(im, 0, 0, w, h);
+  const px = cx.getImageData(0, 0, w, h).data;
+  prog('轉換色彩…'); await yieldUI();
+  // sRGB → CIELab
+  let L = new Float32Array(N), A = new Float32Array(N), B = new Float32Array(N);
+  const lin = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const c = i / 255; lin[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  for (let i = 0; i < N; i++) {
+    const r = lin[px[i * 4]], g = lin[px[i * 4 + 1]], b = lin[px[i * 4 + 2]];
+    const X = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.9505, Y = 0.2126 * r + 0.7152 * g + 0.0722 * b, Z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.089;
+    const fx = f(X), fy = f(Y), fz = f(Z);
+    L[i] = 116 * fy - 16; A[i] = 500 * (fx - fy); B[i] = 200 * (fy - fz);
+  }
+  // 保邊平滑（簡化雙邊濾波，權重查表）兩輪
+  const SIGC = 4.5, LUT = new Float32Array(1200);
+  for (let i = 0; i < LUT.length; i++) LUT[i] = Math.exp(-(i / 4) / (2 * SIGC * SIGC));
+  const SP = []; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) SP.push([dx, dy, Math.exp(-(dx * dx + dy * dy) / 4.5)]);
+  for (let pass = 0; pass < 2; pass++) {
+    prog(`平滑雜訊（${pass + 1}/2）…`); await yieldUI();
+    const L2 = new Float32Array(N), A2 = new Float32Array(N), B2 = new Float32Array(N);
+    for (let y = 0; y < h; y++) { if ((y & 3) === 0) await maybeYield(); for (let x = 0; x < w; x++) {
+      const i = y * w + x; let sw = 0, sl = 0, sa = 0, sb = 0;
+      for (const [dx, dy, ws] of SP) {
+        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        const j = yy * w + xx, dl = L[j] - L[i], da = A[j] - A[i], db = B[j] - B[i];
+        const wt = ws * LUT[Math.min(1199, Math.round((dl * dl + da * da + db * db) * 4))];
+        sw += wt; sl += wt * L[j]; sa += wt * A[j]; sb += wt * B[j];
+      }
+      L2[i] = sl / sw; A2[i] = sa / sw; B2[i] = sb / sw;
+    } }
+    L = L2; A = A2; B = B2;
+  }
+  // 跨邊明暗差：兩側各隔 2 像素、取 3 像素平均相減 → 單位就是「兩個面的 Lab 色差」，不受模糊影響、雜訊被平均掉
+  const G = new Float32Array(N);
+  for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
+    const i = y * w + x; let s = 0;
+    for (const C of [L, A, B]) {
+      const gx = (C[i - w + 2] + C[i + 2] + C[i + w + 2] - C[i - w - 2] - C[i - 2] - C[i + w - 2]) / 3;
+      const gy = (C[i + 2 * w - 1] + C[i + 2 * w] + C[i + 2 * w + 1] - C[i - 2 * w - 1] - C[i - 2 * w] - C[i - 2 * w + 1]) / 3;
+      s += gx * gx + gy * gy;
+    }
+    G[i] = Math.sqrt(s);
+  }
+  // SLIC 超像素
+  prog('切超像素…'); await yieldUI();
+  const K = 800, Sg = Math.max(4, Math.round(Math.sqrt(N / K))), M = 3;
+  const ctr = [];
+  for (let y = Sg >> 1; y < h; y += Sg) for (let x = Sg >> 1; x < w; x += Sg) {
+    let bx = x, by = y, bg = Infinity;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = Math.min(w - 2, Math.max(1, x + dx)), yy = Math.min(h - 2, Math.max(1, y + dy)); if (G[yy * w + xx] < bg) { bg = G[yy * w + xx]; bx = xx; by = yy; } }
+    const j = by * w + bx; ctr.push([L[j], A[j], B[j], bx, by]);
+  }
+  const lab = new Int32Array(N).fill(-1), dist = new Float32Array(N);
+  const wS = (M / Sg) * (M / Sg);
+  for (let it = 0; it < 6; it++) {
+    dist.fill(Infinity);
+    for (let ci = 0; ci < ctr.length; ci++) {
+      const c = ctr[ci]; if ((ci & 15) === 0) await maybeYield();
+      const x0 = Math.max(0, Math.round(c[3] - 2 * Sg)), x1 = Math.min(w - 1, Math.round(c[3] + 2 * Sg));
+      const y0 = Math.max(0, Math.round(c[4] - 2 * Sg)), y1 = Math.min(h - 1, Math.round(c[4] + 2 * Sg));
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const i = y * w + x, dl = L[i] - c[0], da = A[i] - c[1], db = B[i] - c[2], dx = x - c[3], dy = y - c[4];
+        const d = dl * dl + da * da + db * db + (dx * dx + dy * dy) * wS;
+        if (d < dist[i]) { dist[i] = d; lab[i] = ci; }
+      }
+    }
+    const acc = ctr.map(() => [0, 0, 0, 0, 0, 0]);
+    for (let i = 0; i < N; i++) { const a = acc[lab[i]]; a[0] += L[i]; a[1] += A[i]; a[2] += B[i]; a[3] += i % w; a[4] += (i / w) | 0; a[5]++; }
+    acc.forEach((a, ci) => { if (a[5]) ctr[ci] = [a[0] / a[5], a[1] / a[5], a[2] / a[5], a[3] / a[5], a[4] / a[5]]; });
+    await maybeYield();
+  }
+  // 連通性：每個連通塊一個新編號，太小的塊併給鄰居
+  const reg = new Int32Array(N).fill(-1), stack = new Int32Array(N);
+  let nReg = 0; const minSP = (Sg * Sg) >> 2, size = [];
+  for (let s0 = 0; s0 < N; s0++) {
+    if ((s0 & 4095) === 0) await maybeYield();
+    if (reg[s0] >= 0) continue;
+    let adj = -1; const x0 = s0 % w, y0 = (s0 / w) | 0;
+    if (x0 > 0 && reg[s0 - 1] >= 0) adj = reg[s0 - 1]; else if (y0 > 0 && reg[s0 - w] >= 0) adj = reg[s0 - w];
+    let sp = 0, cnt = 0; stack[sp++] = s0; reg[s0] = nReg; const members = [];
+    while (sp) {
+      const i = stack[--sp]; members.push(i); cnt++;
+      const x = i % w, y = (i / w) | 0;
+      if (x > 0 && reg[i - 1] < 0 && lab[i - 1] === lab[i]) { reg[i - 1] = nReg; stack[sp++] = i - 1; }
+      if (x < w - 1 && reg[i + 1] < 0 && lab[i + 1] === lab[i]) { reg[i + 1] = nReg; stack[sp++] = i + 1; }
+      if (y > 0 && reg[i - w] < 0 && lab[i - w] === lab[i]) { reg[i - w] = nReg; stack[sp++] = i - w; }
+      if (y < h - 1 && reg[i + w] < 0 && lab[i + w] === lab[i]) { reg[i + w] = nReg; stack[sp++] = i + w; }
+    }
+    if (cnt < minSP && adj >= 0) { for (const i of members) reg[i] = adj; size[adj] += cnt; }
+    else { size[nReg] = cnt; nReg++; }
+  }
+  prog(`合併相似區塊（${nReg} 塊）…`); await yieldUI();
+  // 區域鄰接圖：每條共用邊界累積兩側梯度
+  const R = [];
+  for (let r = 0; r < nReg; r++) R.push({ n: 0, l: 0, a: 0, b: 0, nb: new Map() });
+  for (let i = 0; i < N; i++) { const r = R[reg[i]]; r.n++; r.l += L[i]; r.a += A[i]; r.b += B[i]; }
+  // 邊界強度：沿跨邊方向各退一格取樣（p-1 對 q+1），比較兩側顏色；平面上的漸層幾乎為 0，折線處就是兩面的色差
+  const addEdge = (p, q, st) => {
+    const a = reg[p], b = reg[q]; if (a === b) return;
+    const p2 = p - st >= 0 && reg[p - st] === a ? p - st : p, q2 = q + st < N && reg[q + st] === b ? q + st : q;
+    const g = Math.hypot(L[p2] - L[q2], A[p2] - A[q2], B[p2] - B[q2]);
+    let e = R[a].nb.get(b); if (!e) { e = { s: 0, c: 0 }; R[a].nb.set(b, e); R[b].nb.set(a, e); }
+    e.s += g; e.c++;
+  };
+  for (let y = 0; y < h; y++) { if ((y & 7) === 0) await maybeYield(); for (let x = 0; x < w; x++) { const i = y * w + x; if (x < w - 1) addEdge(i, i + 1, 1); if (y < h - 1) addEdge(i, i + w, w); } }
+  const parent = new Int32Array(nReg).map((_, i) => i);
+  const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  const alive = new Set(R.map((_, i) => i));
+  const meanDiff = (a, b) => { const A1 = R[a], B1 = R[b]; return Math.hypot(A1.l / A1.n - B1.l / B1.n, A1.a / A1.n - B1.a / B1.n, A1.b / A1.n - B1.b / B1.n); };
+  // 成本：邊界平均梯度為主，區域平均色差為輔（平面上的光線漸層只會讓色差緩慢變化）
+  const cost = (a, b, e) => e.s / e.c + 0.06 * meanDiff(a, b);
+  const merge = (a, b) => {
+    const ra = R[a], rb = R[b];
+    ra.n += rb.n; ra.l += rb.l; ra.a += rb.a; ra.b += rb.b;
+    for (const [x, e] of rb.nb) {
+      if (x === a) continue;
+      const rx = R[x]; rx.nb.delete(b);
+      const ea = ra.nb.get(x);
+      if (ea) { ea.s += e.s; ea.c += e.c; } else { ra.nb.set(x, e); rx.nb.set(a, e); }
+    }
+    ra.nb.delete(b); rb.nb.clear(); parent[b] = a; alive.delete(b);
+  };
+  // 門檻自動校正：大部分超像素邊界都在同一個平面內，它們的成本中位數 ≈ 這張照片的雜訊／紋理水準
+  const c0 = []; for (const a of alive) for (const [b2, e] of R[a].nb) if (b2 > a) c0.push(cost(a, b2, e));
+  c0.sort((x, y) => x - y);
+  const noise = c0.length ? c0[c0.length >> 1] : 1;
+  const T = Math.max(1.6, noise * 2.6) * Math.pow(0.85, detail - 5);   // 細緻度越高，門檻越低 → 面越多
+  const minArea = N * 0.006 * Math.pow(0.8, detail - 5);
+  const minEdge = (filter) => {
+    let best = null, bc = Infinity;
+    for (const a of alive) {
+      if (filter && !filter(a)) continue;
+      for (const [b, e] of R[a].nb) { if (b < a && !filter) continue; const c = cost(a, b, e); if (c < bc) { bc = c; best = [a, b]; } }
+    }
+    return [best, bc];
+  };
+  let guard = 0;
+  while (guard++ < nReg) {
+    const [best, bc] = minEdge(null); if (!best || bc > T) break;
+    merge(best[0], best[1]);
+    if (guard % 60 === 0) prog(`合併相似區塊（剩 ${alive.size} 塊）…`);
+    await maybeYield();
+  }
+  // 碎塊併入最像的鄰居
+  guard = 0;
+  while (guard++ < nReg) {
+    const [best] = minEdge(a => R[a].n < minArea && R[a].nb.size > 0); if (!best) break;
+    merge(best[1], best[0]); await maybeYield();
+  }
+  prog('描出多邊形…'); await yieldUI();
+  const final = new Int32Array(N); for (let i = 0; i < N; i++) final[i] = find(reg[i]);
+  const sx = outRes[0] / w, sy = outRes[1] / h;
+  const polys = [];
+  const cand = [], bgRefs = [];
+  for (const r of alive) {
+    await maybeYield();
+    if (R[r].n < minArea) continue;
+    const big = R[r].n > N * 0.15;
+    if (R[r].n > N * 0.85) { bgRefs.push(r); continue; }   // 整張照片幾乎同一塊：不是面
+    const poly = traceRegion(final, w, h, r);
+    if (!poly) continue;
+    const hull = Math.abs(polyArea(convexHull(poly)));
+    // 形狀太破碎（人影、雜物、植物、包住整組牆的背景）不當成平面
+    if (hull <= 0 || R[r].n / hull < 0.72) { if (big) bgRefs.push(r); continue; }
+    cand.push([r, poly]);
+  }
+  for (const [r, poly] of cand) {
+    // 背景被光斑切下來的碎塊：顏色跟被剔除的大背景幾乎一樣 → 也不要
+    if (bgRefs.some(g => meanDiff(r, g) < 3.5)) continue;
+    const simp = simplifyClosed(poly, Math.sqrt(R[r].n) * 0.06, 8);
+    if (simp.length >= 3) polys.push(simp.map(p => [p[0] * sx, p[1] * sy]));
+  }
+  const snapped = snapPolys(polys, Math.min(outRes[0], outRes[1]) * 0.028, outRes);
+  return { polys: snapped, ms: Math.round(performance.now() - t0), w, h, superpixels: nReg, regions: alive.size, noise: +noise.toFixed(2), T: +T.toFixed(2) };
+}
+function polyArea(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; }
+function convexHull(pts) {
+  const P = pts.map(p => p.slice()).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+// Moore 鄰域外輪廓追蹤（回傳像素中心座標，順時針）
+function traceRegion(lbl, w, h, r) {
+  let s = -1; for (let i = 0; i < lbl.length; i++) if (lbl[i] === r) { s = i; break; }
+  if (s < 0) return null;
+  const DX = [-1, -1, 0, 1, 1, 1, 0, -1], DY = [0, -1, -1, -1, 0, 1, 1, 1];
+  const inR = (x, y) => x >= 0 && y >= 0 && x < w && y < h && lbl[y * w + x] === r;
+  const sx = s % w, sy = (s / w) | 0;
+  let x = sx, y = sy, back = 0; const pts = [[x + 0.5, y + 0.5]];
+  let firstMove = -1;
+  for (let it = 0; it < 4 * lbl.length; it++) {
+    let found = -1;
+    for (let i = 1; i <= 8; i++) { const d = (back + i) % 8; if (inR(x + DX[d], y + DY[d])) { found = d; break; } }
+    if (found < 0) return null;
+    const prev = (found + 7) % 8, nx = x + DX[found], ny = y + DY[found];
+    const bx = x + DX[prev] - nx, by = y + DY[prev] - ny;
+    let nb = 0; for (let d = 0; d < 8; d++) if (DX[d] === bx && DY[d] === by) { nb = d; break; }
+    if (x === sx && y === sy) { if (firstMove < 0) firstMove = found; else if (found === firstMove) break; }
+    x = nx; y = ny; back = nb;
+    pts.push([x + 0.5, y + 0.5]);
+  }
+  pts.pop();
+  return pts.length >= 3 ? pts : null;
+}
+function dpOpen(pts, eps) {
+  if (pts.length < 3) return pts.slice();
+  const a = pts[0], b = pts[pts.length - 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+  let md = -1, mi = 0;
+  for (let i = 1; i < pts.length - 1; i++) { const d = Math.abs(dy * pts[i][0] - dx * pts[i][1] + b[0] * a[1] - b[1] * a[0]) / len; if (d > md) { md = d; mi = i; } }
+  if (md <= eps) return [a, b];
+  const l = dpOpen(pts.slice(0, mi + 1), eps), r = dpOpen(pts.slice(mi), eps);
+  return l.slice(0, -1).concat(r);
+}
+function simplifyClosed(pts, eps, maxV) {
+  // 從離起點最遠的點切成兩段，各自做 Douglas–Peucker；點數太多就放寬門檻
+  let far = 0, fd = -1; for (let i = 0; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[0][0], pts[i][1] - pts[0][1]); if (d > fd) { fd = d; far = i; } }
+  let out = [];
+  for (let e = Math.max(1, eps), k = 0; k < 20; k++, e *= 1.25) {
+    const A1 = dpOpen(pts.slice(0, far + 1), e), B1 = dpOpen(pts.slice(far).concat([pts[0]]), e);
+    out = A1.slice(0, -1).concat(B1.slice(0, -1));
+    // 去掉幾乎共線的點
+    out = out.filter((p, i) => { const a = out[(i + out.length - 1) % out.length], b = out[(i + 1) % out.length]; const cr = Math.abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1); return cr > e * 0.5; });
+    if (out.length <= maxV) break;
+  }
+  return out;
+}
+// 相鄰面的角點吸附成同一個座標（編輯器把重疊的點當成同一個頂點一起拖），貼近邊框的點貼齊邊框
+function snapPolys(polys, rad, res) {
+  const cl = [];
+  for (const P of polys) for (const p of P) {
+    let best = null, bd = rad;
+    for (const c of cl) { const d = Math.hypot(c.x - p[0], c.y - p[1]); if (d < bd) { bd = d; best = c; } }
+    if (best) { best.sx += p[0]; best.sy += p[1]; best.n++; best.x = best.sx / best.n; best.y = best.sy / best.n; best.m.push(p); }
+    else cl.push({ x: p[0], y: p[1], sx: p[0], sy: p[1], n: 1, m: [p] });
+  }
+  for (const c of cl) {
+    let x = Math.round(c.x), y = Math.round(c.y);
+    if (x < rad) x = 0; if (y < rad) y = 0; if (x > res[0] - rad) x = res[0]; if (y > res[1] - rad) y = res[1];
+    for (const p of c.m) { p[0] = x; p[1] = y; }
+  }
+  return polys.map(P => P.filter((p, i) => { const q = P[(i + 1) % P.length]; return !(p[0] === q[0] && p[1] === q[1]); }))
+    .filter(P => P.length >= 3 && Math.abs(polyArea(P)) > rad * rad);
+}
+
+/* ---------- 顯示與編輯 ---------- */
+const view = document.getElementById('view');
+const vctx = view.getContext('2d');
+let VIEW = IS_OUT ? 'out' : (qs.get('view') || 'edit');
+let EDIT = 'facet';
+let selFacet = null, selLayer = null, adding = null, drag = null, hover = null, selVert = null;
+const DPR = () => window.devicePixelRatio || 1;
+// hit radius in output pixels: fingers need a much bigger target than a mouse (and the canvas is in device pixels)
+const hitR = e => ((e && e.pointerType && e.pointerType !== 'mouse') ? 26 : 12) * DPR() / fit.s;
+let fit = { s: 1, ox: 0, oy: 0 };
+
+function resize() {
+  const r = view.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  view.width = Math.max(2, Math.round(r.width * dpr)); view.height = Math.max(2, Math.round(r.height * dpr));
+}
+window.addEventListener('resize', resize);
+
+function toOut(e) {
+  const r = view.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const x = (e.clientX - r.left) * dpr, y = (e.clientY - r.top) * dpr;
+  return [(x - fit.ox) / fit.s, (y - fit.oy) / fit.s];
+}
+function allVerts() { const a = []; S.facets.forEach(f => f.pts.forEach(p => a.push(p))); return a; }
+function nearVert(pt, rad) {
+  let best = null, bd = rad;
+  for (const p of allVerts()) { const d = Math.hypot(p[0] - pt[0], p[1] - pt[1]); if (d < bd) { bd = d; best = p; } }
+  return best;
+}
+function curLayer() { return S.layers.find(l => l.id === selLayer) || null; }
+
+view.addEventListener('pointerdown', e => {
+  if (VIEW !== 'edit') return;
+  view.setPointerCapture(e.pointerId);
+  const pt = toOut(e), rad = hitR(e);
+  if (EDIT === 'facet') {
+    if (adding) {
+      const snap = nearVert(pt, rad);
+      const q = snap ? snap.slice() : pt.map(Math.round);
+      if (adding.length >= 3 && Math.hypot(q[0] - adding[0][0], q[1] - adding[0][1]) < rad * 1.6) { finishAdd(); return; }
+      adding.push(q); syncAddUI(); return;
+    }
+    const v = nearVert(pt, rad);
+    if (v) {
+      const group = allVerts().filter(p => Math.hypot(p[0] - v[0], p[1] - v[1]) < 0.75);
+      selVert = group; syncNudge();
+      drag = { kind: 'vert', group, start: pt, orig: v.slice() }; return;
+    }
+    const hit = [...S.facets].reverse().find(f => inPoly(pt, f.pts));
+    selFacet = hit ? hit.id : null; selVert = null; syncNudge();
+    if (hit) drag = { kind: 'facet', f: hit, start: pt, orig: hit.pts.map(p => p.slice()), group: null };
+  } else {
+    const L = curLayer(); if (!L) return;
+    const ci = L.q.findIndex(p => Math.hypot(p[0] - pt[0], p[1] - pt[1]) < rad * 1.4);
+    if (ci >= 0) { drag = { kind: 'corner', L, i: ci }; return; }
+    if (inPoly(pt, L.q)) { drag = { kind: 'layer', L, start: pt, orig: L.q.map(p => p.slice()) }; return; }
+    const hit = [...S.layers].reverse().find(l => inPoly(pt, l.q));
+    if (hit) { selLayer = hit.id; syncLayerUI(); drag = { kind: 'layer', L: hit, start: pt, orig: hit.q.map(p => p.slice()) }; }
+  }
+});
+view.addEventListener('pointermove', e => {
+  const pt = toOut(e); hover = pt;
+  if (!drag) return;
+  if (drag.kind === 'vert') { const dx = pt[0] - drag.start[0], dy = pt[1] - drag.start[1]; for (const p of drag.group) { p[0] = Math.round(drag.orig[0] + dx); p[1] = Math.round(drag.orig[1] + dy); } }
+  else if (drag.kind === 'facet' && e.altKey) { const dx = pt[0] - drag.start[0], dy = pt[1] - drag.start[1]; drag.f.pts.forEach((p, i) => { p[0] = Math.round(drag.orig[i][0] + dx); p[1] = Math.round(drag.orig[i][1] + dy); }); }
+  else if (drag.kind === 'corner') { drag.L.q[drag.i] = pt.map(Math.round); }
+  else if (drag.kind === 'layer') { const dx = pt[0] - drag.start[0], dy = pt[1] - drag.start[1]; drag.L.q = drag.orig.map(p => [Math.round(p[0] + dx), Math.round(p[1] + dy)]); }
+});
+view.addEventListener('pointerup', () => { if (drag) { drag = null; saveState(); } });
+view.addEventListener('dblclick', () => { if (adding && adding.length >= 3) finishAdd(); });
+function finishAdd() {
+  if (adding && adding.length >= 3) { const f = { id: uid(), pts: adding }; S.facets.push(f); selFacet = f.id; saveState(); }
+  adding = null; document.getElementById('btnAddFacet').classList.remove('on'); syncAddUI();
+}
+function syncAddUI() {
+  const on = !!adding;
+  document.getElementById('addTools').style.display = on ? '' : 'none';
+  const fin = document.getElementById('btnFinish');
+  fin.disabled = !on || adding.length < 3;
+  fin.textContent = on && adding.length < 3 ? `再點 ${3 - adding.length} 個點` : '✓ 完成這個面';
+}
+function syncNudge() {
+  const el = document.getElementById('nudgeInfo');
+  if (el) el.textContent = selVert ? `已選取頂點（${Math.round(selVert[0][0])}, ${Math.round(selVert[0][1])}），微調：` : '點一下頂點選取，再用方向鍵微調：';
+}
+function nudge(dx, dy) {
+  if (!selVert) return;
+  const k = document.getElementById('nudgeBig').checked ? 10 : 1;
+  for (const p of selVert) { p[0] += dx * k; p[1] += dy * k; }
+  syncNudge(); saveState();
+}
+// keep the stage the photo's shape (a portrait phone photo was being stretched to 16:9); rescale everything drawn on it
+function setRes(w, h) {
+  const [ow, oh] = S.res, kx = w / ow, ky = h / oh;
+  if (kx === 1 && ky === 1) return;
+  for (const f of S.facets) for (const p of f.pts) { p[0] = Math.round(p[0] * kx); p[1] = Math.round(p[1] * ky); }
+  for (const L of S.layers) L.q = L.q.map(p => [Math.round(p[0] * kx), Math.round(p[1] * ky)]);
+  S.res = [w, h];
+}
+// rectangle with the image's own aspect, centred where the old quad was
+function quadForAspect(q, aspect, width) {
+  const c = centroid(q);
+  const w = width || (Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) + Math.hypot(q[2][0] - q[3][0], q[2][1] - q[3][1])) / 2;
+  const h = w / aspect;
+  return [[c[0] - w / 2, c[1] - h / 2], [c[0] + w / 2, c[1] - h / 2], [c[0] + w / 2, c[1] + h / 2], [c[0] - w / 2, c[1] + h / 2]].map(p => p.map(Math.round));
+}
+function imgSize(src) { return new Promise(res => { const im = new Image(); im.onload = () => res([im.naturalWidth, im.naturalHeight]); im.onerror = () => res([1, 1]); im.src = src; }); }
+// two-tap confirmation (window.confirm is blocked in sandboxed frames and is clumsy on phones)
+function armed(btn, label) {
+  if (btn.dataset.armed) { clearTimeout(+btn.dataset.armed); delete btn.dataset.armed; btn.textContent = btn.dataset.label; return true; }
+  btn.dataset.label = btn.textContent; btn.textContent = label;
+  btn.dataset.armed = setTimeout(() => { delete btn.dataset.armed; btn.textContent = btn.dataset.label; }, 3000);
+  return false;
+}
+function factoryReset() {
+  try { localStorage.removeItem(LS); } catch (e) {}
+  S = demoState(); selFacet = selLayer = null; selVert = null; adding = null; drag = null; autoPrev = null;
+  document.getElementById('btnAddFacet').classList.remove('on');
+  syncAll(); syncAddUI(); syncNudge(); setView('sim'); setEdit('facet'); setTime(0); saveState();
+}
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'Escape') { adding = null; document.getElementById('btnAddFacet').classList.remove('on'); syncAddUI(); }
+  else if (selVert && e.key.startsWith('Arrow')) { e.preventDefault(); nudge(e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0, e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0); }
+  else if (e.key === 'Enter' && adding) finishAdd();
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && EDIT === 'facet' && selFacet) delFacet();
+  else if (e.key === ' ') { e.preventDefault(); play(!clock.playing && !(audioOn && !audio.paused)); }
+});
+function delFacet() { S.facets = S.facets.filter(f => f.id !== selFacet); selFacet = null; selVert = null; syncNudge(); saveState(); }
+
+function drawOverlay(ctx) {
+  ctx.save();
+  ctx.translate(fit.ox, fit.oy); ctx.scale(fit.s, fit.s);
+  const px = 1 / fit.s;
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = px; ctx.strokeRect(0, 0, S.res[0], S.res[1]);
+  if (EDIT === 'facet' && autoPrev) { /* 預覽偵測結果時先藏起目前的面，避免兩組線疊在一起 */ }
+  else if (EDIT === 'facet') {
+    S.facets.forEach(f => {
+      polyPath(ctx, f.pts);
+      ctx.strokeStyle = f.id === selFacet ? '#5fe3d6' : 'rgba(255,255,255,.55)';
+      ctx.lineWidth = (f.id === selFacet ? 2.5 : 1.2) * px; ctx.stroke();
+      if (f.id === selFacet) { ctx.fillStyle = 'rgba(95,227,214,.12)'; ctx.fill(); }
+    });
+    const d = DPR();
+    for (const p of allVerts()) { const on = selVert && selVert.includes(p); ctx.fillStyle = on ? '#5fe3d6' : '#fff'; ctx.beginPath(); ctx.arc(p[0], p[1], (on ? 9 : 6) * d * px, 0, 7); ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5 * d * px; ctx.stroke(); }
+    if (adding) {
+      ctx.strokeStyle = '#e8ef3c'; ctx.lineWidth = 2 * px; ctx.setLineDash([6 * px, 5 * px]);
+      ctx.beginPath(); adding.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+      if (hover) ctx.lineTo(hover[0], hover[1]); ctx.stroke(); ctx.setLineDash([]);
+      adding.forEach((p, i) => { ctx.fillStyle = i === 0 && adding.length >= 3 ? '#5fe3d6' : '#e8ef3c'; ctx.beginPath(); ctx.arc(p[0], p[1], (i === 0 && adding.length >= 3 ? 12 : 6) * DPR() * px, 0, 7); ctx.fill(); });
+    }
+  } else {
+    S.layers.forEach(L => {
+      polyPath(ctx, L.q); const on = L.id === selLayer;
+      ctx.strokeStyle = on ? '#e0368f' : 'rgba(255,255,255,.35)'; ctx.lineWidth = (on ? 2.5 : 1) * px;
+      ctx.setLineDash(on ? [] : [5 * px, 5 * px]); ctx.stroke(); ctx.setLineDash([]);
+      if (on) L.q.forEach((p, i) => {
+        ctx.fillStyle = '#e0368f'; ctx.beginPath(); ctx.arc(p[0], p[1], 9 * DPR() * px, 0, 7); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = `${11 * px}px sans-serif`; ctx.fillText(['左上', '右上', '右下', '左下'][i], p[0] + 9 * px, p[1] - 9 * px);
+      });
+    });
+  }
+  ctx.restore();
+}
+
+let autoPrev = null, autoBusy = false;
+const AUTO_COLS = ['#e0368f', '#5fe3d6', '#e9ee3c', '#8a3bd1', '#ff8a3c', '#4c8dff'];
+function drawAutoPreview(ctx) {
+  ctx.save(); ctx.translate(fit.ox, fit.oy); ctx.scale(fit.s, fit.s);
+  const px = 1 / fit.s, d = DPR();
+  autoPrev.forEach((P, i) => {
+    polyPath(ctx, P); ctx.globalAlpha = 0.28; ctx.fillStyle = AUTO_COLS[i % AUTO_COLS.length]; ctx.fill();
+    ctx.globalAlpha = 1; ctx.strokeStyle = AUTO_COLS[i % AUTO_COLS.length]; ctx.lineWidth = 2.5 * d * px; ctx.setLineDash([7 * d * px, 4 * d * px]); ctx.stroke(); ctx.setLineDash([]);
+  });
+  ctx.fillStyle = '#fff';
+  for (const P of autoPrev) for (const p of P) { ctx.beginPath(); ctx.arc(p[0], p[1], 4 * d * px, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+function syncAutoUI() {
+  const box = document.getElementById('autoBox'); if (!box) return;
+  box.style.display = S.bg ? '' : 'none';
+  document.getElementById('autoApplyRow').style.display = autoPrev ? '' : 'none';
+  document.getElementById('btnAutoRe').disabled = autoBusy;
+  document.getElementById('btnAuto').disabled = autoBusy;
+}
+async function runAuto() {
+  if (!S.bg || autoBusy) return;
+  autoBusy = true; syncAutoUI();
+  const st = document.getElementById('autoStatus');
+  document.getElementById('autoHint').classList.remove('new'); document.getElementById('btnAuto').classList.remove('new');
+  try {
+    const det = +document.getElementById('autoDetail').value;
+    const r = await detectFacets(S.bg, det, m => { st.textContent = m; });
+    autoPrev = r.polys; window.__autoLast = { count: r.polys.length, ms: r.ms, w: r.w, h: r.h, superpixels: r.superpixels, regions: r.regions, detail: det, noise: r.noise, T: r.T };
+    st.textContent = r.polys.length ? `找到 ${r.polys.length} 個面（${r.ms} ms）。虛線是預覽，確認後按「套用」；不滿意可調細緻度再偵測。` : '沒找到明顯的平面：試試調高細緻度，或改用「新增面」手動描。';
+    setView('edit');
+  } catch (err) { st.textContent = '偵測失敗：' + err.message; console.error(err); }
+  autoBusy = false; syncAutoUI();
+}
+
+/* ---------- 主迴圈 ---------- */
+let FREEZE = qs.has('t') ? +qs.get('t') : null;
+window.__setT = t => { FREEZE = t; };
+let lastFrame = performance.now(), recorder = null;
+function frame() {
+  const nowMs = performance.now(), dt = Math.min(0.1, (nowMs - lastFrame) / 1000); lastFrame = nowMs;
+  const t = FREEZE !== null ? FREEZE : now();
+  const ap = audioPulse(dt);
+  const T = timeline(t);
+  const beatPulse = Math.exp(-(T.b % 1) * 5);
+  const pulse = ap !== null ? Math.max(ap, beatPulse * 0.25) : beatPulse;
+  const C = renderComposite(t, pulse, VIEW);
+  // 顯示
+  const W = view.width, H = view.height;
+  vctx.setTransform(1, 0, 0, 1, 0, 0);
+  vctx.fillStyle = IS_OUT ? '#000' : '#050407'; vctx.fillRect(0, 0, W, H);
+  const s = Math.min(W / S.res[0], H / S.res[1]); fit = { s, ox: (W - S.res[0] * s) / 2, oy: (H - S.res[1] * s) / 2 };
+  vctx.imageSmoothingQuality = 'high';
+  vctx.drawImage(C, fit.ox, fit.oy, S.res[0] * s, S.res[1] * s);
+  if (VIEW === 'edit' && !IS_OUT) drawOverlay(vctx);
+  if (autoPrev && !IS_OUT) drawAutoPreview(vctx);
+  if (!IS_OUT) {
+    const L = loopSec(), tl = ((t % L) + L) % L;
+    if (!seeking) document.getElementById('seek').value = Math.round(tl / L * 1000);
+    const name = (STAGES.find(x => x[0] === T.cur) || [, ''])[1];
+    document.getElementById('tc').textContent = `${tl.toFixed(2)} / ${L.toFixed(2)} s · 第 ${Math.floor(T.b) + 1} 拍 · ${name}`;
+  }
+  window.__reel2 = { t, beat: T.b, stage: T.cur, facets: S.facets.length, layers: S.layers.length, build: BUILD, auto: autoPrev ? autoPrev.length : 0 };
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 側欄 UI ---------- */
+const $ = id => document.getElementById(id);
+let seeking = false;
+function setView(v) { VIEW = v; document.querySelectorAll('#viewTabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+function setEdit(m) {
+  EDIT = m; document.querySelectorAll('#editTabs button').forEach(b => b.classList.toggle('on', b.dataset.e === m));
+  $('facetTools').style.display = m === 'facet' ? '' : 'none'; $('layerTools').style.display = m === 'layer' ? '' : 'none';
+  if (m === 'layer' && !selLayer && S.layers[0]) selLayer = S.layers[0].id;
+  syncLayerUI();
+}
+function syncLayerUI() {
+  const sel = $('layerSel'); sel.innerHTML = '';
+  S.layers.forEach(L => { const o = document.createElement('option'); o.value = L.id; o.textContent = (L.type === 'img' ? '🖼 ' : '字 ') + (L.name || L.text || '圖層'); sel.appendChild(o); });
+  const L = curLayer(); if (!L) return;
+  sel.value = L.id;
+  $('rowText').style.display = L.type === 'text' ? '' : 'none';
+  $('layerText').value = L.text || ''; $('layerColor').value = L.color || '#ffffff';
+  $('layerStage').value = L.stage; $('layerBoil').value = L.boil || 0;
+}
+function buildSegs() {
+  const box = $('segs'); box.innerHTML = '';
+  STAGES.forEach(([k, name]) => {
+    const sp = document.createElement('span'); sp.textContent = name; box.appendChild(sp);
+    const inp = document.createElement('input'); inp.type = 'number'; inp.min = 0; inp.max = 64; inp.value = S.beats[k];
+    inp.oninput = () => { S.beats[k] = Math.max(0, +inp.value || 0); saveState(); };
+    box.appendChild(inp);
+  });
+  const pj = $('segJump'); pj.innerHTML = '';
+  STAGES.slice(1, 5).forEach(([k, name]) => {
+    const b = document.createElement('button'); b.textContent = name;
+    b.onclick = () => { const T = timeline(0); setTime((T.st[k + 'Start'] + 0.01) * 60 / S.bpm); };
+    pj.appendChild(b);
+  });
+  const pal = $('palette'); pal.innerHTML = '';
+  S.palette.forEach((col, i) => {
+    const inp = document.createElement('input'); inp.type = 'color'; inp.value = col;
+    inp.oninput = () => { S.palette[i] = inp.value; saveState(); }; pal.appendChild(inp);
+  });
+  const ln = document.createElement('input'); ln.type = 'color'; ln.value = S.line; ln.title = '線稿顏色';
+  ln.oninput = () => { S.line = ln.value; saveState(); }; pal.appendChild(ln);
+}
+function syncAll() {
+  syncAutoUI();
+  $('bpm').value = S.bpm; $('bgAlpha').value = S.bgAlpha; $('ambient').checked = !!S.ambient;
+  buildSegs(); syncLayerUI();
+}
+function readFile(file) { return new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); }); }
+function shrinkImage(dataUrl, max = 1280) {
+  return new Promise(res => {
+    const im = new Image(); im.onload = () => {
+      const k = Math.min(1, max / Math.max(im.width, im.height)); const cv = document.createElement('canvas');
+      cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+      res(cv.toDataURL(dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg', 0.88));
+    }; im.src = dataUrl;
+  });
+}
+
+if (!IS_OUT) {
+  document.querySelectorAll('#viewTabs button').forEach(b => b.onclick = () => setView(b.dataset.v));
+  document.querySelectorAll('#editTabs button').forEach(b => b.onclick = () => { setEdit(b.dataset.e); setView('edit'); });
+  $('btnOutWin').onclick = () => { window.open(location.pathname + location.search.replace(/[?&]t=[^&]*/, '') + '#out', 'reel2-out', 'width=1280,height=720'); setTimeout(() => { broadcast({ kind: 'state', S }); sendClock(); }, 800); };
+  $('bgFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    S.bg = await shrinkImage(await readFile(f), 1600);
+    const [iw, ih] = await imgSize(S.bg);
+    setRes(iw >= ih ? 1280 : Math.round(1280 * iw / ih), iw >= ih ? Math.round(1280 * ih / iw) : 1280);
+    autoPrev = null; saveState(); setView('edit'); syncAutoUI();
+    $('autoHint').textContent = '照片已載入 → 按「✦ 自動偵測面」讓程式找出牆上的面（也可以手動描）。';
+    $('autoHint').classList.add('new'); $('btnAuto').classList.add('new'); $('autoStatus').textContent = '';
+  };
+  $('btnAuto').onclick = () => runAuto();
+  $('btnAutoRe').onclick = () => runAuto();
+  let autoT = 0;
+  $('autoDetail').oninput = () => { if (autoPrev) { clearTimeout(autoT); autoT = setTimeout(runAuto, 350); } };
+  $('btnAutoApply').onclick = e => {
+    if (!autoPrev) return;
+    if (S.facets.length && !armed(e.currentTarget, '再按一次：取代目前的面')) return;
+    S.facets = autoPrev.map(P => ({ id: uid(), pts: P.map(p => p.slice()) }));
+    const n = S.facets.length;
+    autoPrev = null; selFacet = null; selVert = null; syncNudge();
+    setEdit('facet'); setView('edit'); saveState(); syncAutoUI();
+    $('autoStatus').textContent = `已套用 ${n} 個面。拖頂點或用方向鍵微調，相鄰面的共用角會一起動。`;
+  };
+  $('btnAutoCancel').onclick = () => { autoPrev = null; syncAutoUI(); $('autoStatus').textContent = '已取消預覽。'; };
+  $('bgAlpha').oninput = e => { S.bgAlpha = +e.target.value; saveState(); };
+  $('ambient').onchange = e => { S.ambient = e.target.checked; saveState(); };
+  $('btnAddFacet').onclick = () => { setEdit('facet'); setView('edit'); adding = []; selVert = null; $('btnAddFacet').classList.add('on'); syncAddUI(); syncNudge();
+    if (document.body.classList.contains('narrow')) { document.body.classList.add('side-hidden'); requestAnimationFrame(resize); } };
+  $('btnUndoPt').onclick = () => { if (adding && adding.length) { adding.pop(); syncAddUI(); } };
+  $('btnFinish').onclick = () => finishAdd();
+  $('btnCancelAdd').onclick = () => { adding = null; $('btnAddFacet').classList.remove('on'); syncAddUI(); };
+  document.querySelectorAll('#nudgeRow [data-n]').forEach(b => b.onclick = () => { const [x, y] = b.dataset.n.split(',').map(Number); nudge(x, y); });
+  $('btnSide').onclick = () => { document.body.classList.toggle('side-hidden'); requestAnimationFrame(resize); };
+  $('btnFactory').onclick = e => { if (armed(e.currentTarget, '再按一次：全部清除')) factoryReset(); };
+  $('btnFactory2').onclick = e => { if (armed(e.currentTarget, '再按一次確認')) factoryReset(); };
+  $('btnDelFacet').onclick = () => selFacet && delFacet();
+  $('btnClearFacets').onclick = e => { if (armed(e.currentTarget, '再按一次清空')) { S.facets = []; selFacet = null; selVert = null; syncNudge(); saveState(); } };
+  $('layerSel').onchange = e => { selLayer = e.target.value; syncLayerUI(); };
+  $('btnAddText').onclick = () => { const L = { id: uid(), type: 'text', name: '文字', text: '新文字', stage: 'title', color: '#ffffff', boil: 1, q: [[500, 260], [780, 260], [780, 400], [500, 400]] }; S.layers.push(L); selLayer = L.id; syncLayerUI(); saveState(); };
+  $('btnAddImg').onclick = () => $('imgFile').click();
+  $('imgFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return; const src = await shrinkImage(await readFile(f), 900);
+    const [iw, ih] = await imgSize(src), aspect = iw / Math.max(1, ih);
+    const L = curLayer();
+    // replacing the built-in character keeps its place but takes the new picture's proportions (no stretching)
+    if (L && L.type === 'img' && !L.src) { L.src = src; L.q = quadForAspect(L.q, aspect); }
+    else { const N = { id: uid(), type: 'img', name: f.name.slice(0, 16), src, stage: 'char', color: '#ffffff', boil: 1, q: quadForAspect([[S.res[0] * 0.4, S.res[1] * 0.3], [S.res[0] * 0.6, S.res[1] * 0.3], [S.res[0] * 0.6, S.res[1] * 0.6], [S.res[0] * 0.4, S.res[1] * 0.6]], aspect, S.res[0] * 0.24) }; S.layers.push(N); selLayer = N.id; }
+    syncLayerUI(); saveState();
+  };
+  $('btnDelLayer').onclick = () => { S.layers = S.layers.filter(l => l.id !== selLayer); selLayer = S.layers[0]?.id || null; syncLayerUI(); saveState(); };
+  $('layerText').oninput = e => { const L = curLayer(); if (L) { L.text = e.target.value; saveState(); } };
+  $('layerText').onchange = syncLayerUI;
+  $('layerColor').oninput = e => { const L = curLayer(); if (L) { L.color = e.target.value; saveState(); } };
+  $('layerStage').onchange = e => { const L = curLayer(); if (L) { L.stage = e.target.value; saveState(); } };
+  $('layerBoil').oninput = e => { const L = curLayer(); if (L) { L.boil = +e.target.value; saveState(); } };
+  $('bpm').oninput = e => { const t = now(), b = t * S.bpm / 60; S.bpm = clamp(+e.target.value || 120, 40, 220); setTime(b * 60 / S.bpm); saveState(); };
+  let taps = [];
+  $('btnTap').onclick = () => {
+    const t = performance.now(); taps = taps.filter(x => t - x < 3000); taps.push(t);
+    if (taps.length >= 3) { const iv = (taps[taps.length - 1] - taps[0]) / (taps.length - 1); S.bpm = Math.round(60000 / iv); $('bpm').value = S.bpm; saveState(); }
+  };
+  $('audioFile').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    audio.src = URL.createObjectURL(f); audioOn = true;
+    ensureCtx(); if (!audio._wired) { const src = actx.createMediaElementSource(audio); attachAnalyser(src); src.connect(actx.destination); audio._wired = true; }
+    $('audioInfo').textContent = `已載入：${f.name}（時間軸跟著音樂走，低頻打點會讓畫面閃動）`;
+    actx.resume(); play(true);
+  };
+  $('btnMic').onclick = async () => {
+    try { ensureCtx(); const st = await navigator.mediaDevices.getUserMedia({ audio: true }); attachAnalyser(actx.createMediaStreamSource(st)); actx.resume(); $('btnMic').classList.add('on'); $('audioInfo').textContent = '麥克風收音中：大鼓會觸發閃動。'; }
+    catch (err) { $('audioInfo').textContent = '無法使用麥克風：' + err.message; }
+  };
+  $('btnExport').onclick = () => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' }));
+    a.download = 'facetstage.json'; a.click();
+  };
+  $('btnImport').onclick = () => $('importFile').click();
+  $('importFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const j = JSON.parse(await f.text()); if (j.v !== 1) throw new Error('格式不符'); S = j; syncAll(); saveState(); } catch (err) { $('audioInfo').textContent = '匯入失敗：' + err.message; }
+  };
+  $('btnReset').onclick = e => { if (armed(e.currentTarget, '再按一次覆蓋')) { S = demoState(); selFacet = selLayer = null; selVert = null; syncAll(); syncNudge(); saveState(); } };
+  $('btnRec').onclick = () => {
+    if (recorder) { recorder.stop(); return; }
+    const stream = comp.captureStream(30), chunks = [];
+    try { if (audioOn && audio.captureStream) audio.captureStream().getAudioTracks().forEach(tr => stream.addTrack(tr)); } catch (e) {}
+    recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm' });
+    recorder.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
+    recorder.onstop = () => {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })); a.download = 'facetstage.webm'; a.click();
+      recorder = null; $('btnRec').textContent = '錄下畫面（WebM）'; $('btnRec').classList.remove('on');
+    };
+    recorder.start(); $('btnRec').textContent = '■ 停止並下載'; $('btnRec').classList.add('on');
+    if (!clock.playing) { setTime(0); play(true); }
+  };
+  $('btnPlay').onclick = () => play(!(clock.playing || (audioOn && !audio.paused)));
+  $('btnRew').onclick = () => setTime(0);
+  $('btnFull').onclick = () => $('stageWrap').requestFullscreen?.();
+  $('seek').addEventListener('pointerdown', () => seeking = true);
+  $('seek').addEventListener('pointerup', () => seeking = false);
+  $('seek').oninput = e => setTime(+e.target.value / 1000 * loopSec());
+  syncAll(); setView(VIEW); setEdit('facet'); syncAddUI();
+  // phones: start with the settings folded away so the stage gets the whole screen
+  if (matchMedia('(max-width:760px)').matches) { document.body.classList.add('narrow', 'side-hidden'); requestAnimationFrame(resize); }
+  if (qs.has('play')) play(true);
+} else {
+  // 投影輸出視窗：雙擊全螢幕，接收主視窗的狀態與時鐘
+  view.addEventListener('dblclick', () => document.documentElement.requestFullscreen?.());
+  view.style.cursor = 'none';
+}
+if (bc) bc.onmessage = ev => {
+  const m = ev.data || {};
+  if (m.kind === 'state' && IS_OUT) { S = m.S; }
+  else if (m.kind === 'clock' && IS_OUT) { clock.playing = m.playing; clock.base = m.t + (m.playing ? (Date.now() - m.sent) / 1000 : 0); clock.at = performance.now(); }
+  else if (m.kind === 'hello' && !IS_OUT) { broadcast({ kind: 'state', S }); sendClock(); }
+};
+if (IS_OUT) broadcast({ kind: 'hello' });
+setInterval(() => { if (!IS_OUT && clock.playing) sendClock(); }, 2000);
+
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
