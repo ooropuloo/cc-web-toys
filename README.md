@@ -1,12 +1,23 @@
-# 折面投影台 ＋ 滲 nijimi
+# Cc web toys
 
-兩個單檔、純瀏覽器的互動作品。不需要任何套件、不需要建置，雙擊 `index.html` 就能跑，手機也能玩。都是和 Claude Code 一起做的。
+幾個純瀏覽器的互動作品，都是和 Claude Code 一起做的。手機也能玩。
 
-| | 折面投影台 `facetstage/` | 滲 nijimi `nijimi/` |
+| 作品 | 是什麼 | 怎麼開 |
 |---|---|---|
-| 是什麼 | 投影映射（projection mapping）工具：把霓虹線稿、閃電色塊、角色和標題，依節拍「貼」到立體牆的每一個面上 | 互動流體：手指或滑鼠劃過，發光的墨水就在水裡暈開、捲起渦流 |
-| 技術 | Canvas 2D、透視變形（homography）、Web Audio 節拍偵測、照片自動偵測平面（SLIC 超像素＋區域合併） | WebGL2 Navier–Stokes 流體模擬（advection / pressure / vorticity confinement）＋ bloom |
-| 預覽 | ![](facetstage/shots/phone_3_dragged_lowpoly.png) | ![](nijimi/shots/contact_sheet.png) |
+| 折面投影台 [`facetstage/`](facetstage/) | 投影映射（projection mapping）工具：把霓虹線稿、閃電色塊、角色和標題，依節拍「貼」到立體牆的每一個面上 | 雙擊 `index.html` |
+| 滲 nijimi [`nijimi/`](nijimi/) | 互動流體：手指或滑鼠劃過，發光的墨水就在水裡暈開、捲起渦流 | 雙擊 `index.html` |
+| 台灣機車考照 [`moto-exam/`](moto-exam/) | 3D 機車路考：照官方場地與評分基準的 8 關考場，蓋在 OpenStreetMap 重建的台北 101 街區裡 | 靜態伺服器或 GitHub Pages（見下） |
+
+| 折面投影台 | 滲 nijimi | 台灣機車考照 |
+|---|---|---|
+| ![](facetstage/shots/phone_3_dragged_lowpoly.png) | ![](nijimi/shots/contact_sheet.png) | ![](moto-exam/shots/play.jpg) |
+
+### 線上試玩（GitHub Pages）
+
+到 repo 的 Settings → Pages，Source 選 `Deploy from a branch`、Branch 選 `main` 與 `/ (root)`，之後各作品的網址是
+`https://<帳號>.github.io/Cc-web-toys/<資料夾>/`，例如 `.../moto-exam/`。全部是靜態檔案，不需要建置。
+
+本機要跑 `moto-exam/` 的話，在該資料夾執行 `python -m http.server 8000`（或 `npx serve .`）再開 http://localhost:8000/ ；它用 ES module 與 `fetch` 載入模型，直接雙擊 `index.html` 會被瀏覽器擋下。
 
 ## 折面投影台
 
@@ -32,9 +43,18 @@
 - 程式介面（可接聊天室指令或音樂節拍）：`window.__ink.splat(x, y, dx, dy)`、`bloom(x, y)`、`burst(n)`、`setPalette(name)`、`clear()`。
 - 在 Intel UHD 630 內顯上 1920×1080 約 60 fps，掉幀時會自動降一級畫質。
 
+## 台灣機車考照
+
+打開 `moto-exam/`（要用靜態伺服器，見上）。詳細說明在 [`moto-exam/README.md`](moto-exam/README.md)。
+
+- 先選車型：速克達 125、Grom 型迷你檔車，或娛樂挑戰的電動獨輪車。
+- 8 關依序：直線平衡（15 m × 40 cm，至少 7 秒）→ 斑馬線 → 交岔路口 → 二段式轉彎 → 變換車道 → 直角轉彎 → 停車再開 → 平交道。滿分 100、70 分及格，扣 32 分的項目犯一次就不及格。
+- 操作：W/S 油門煞車、A/D 轉向、Q/E 方向燈、C 擺頭察看、F 腳著地、N 日夜、R 重新挑戰；手機有觸控按鈕。
+- 評分依據：行政院公報第 030 卷第 080 期（2024-05-01）《普通重型及輕型機車駕駛人路考評分基準》。地圖 © OpenStreetMap contributors（ODbL）；人物模型 Microsoft Rocketbox（MIT）。這是打包好的發布版（three.js），沒有附原始碼。
+
 ## 測試工具
 
-兩個專案的 `tools/` 是用無頭 Chrome 截圖、驗證互動的腳本（playwright-core）：
+`facetstage/` 與 `nijimi/` 的 `tools/` 是用無頭 Chrome 截圖、驗證互動的腳本（playwright-core）：
 
 ```bash
 npm i playwright-core            # 或用 PW_FROM 指向已安裝 playwright-core 的位置
@@ -50,3 +70,5 @@ node nijimi/tools/tiers.mjs             # 各畫質等級的 fps 與 GPU 時間
 ## 授權
 
 MIT（見 `LICENSE`）。測試圖為程式合成；截圖與示範影片為本專案自行輸出。
+
+`moto-exam/` 內含第三方素材：OpenStreetMap 資料（ODbL）與 Microsoft Rocketbox 人物模型（MIT，見 `moto-exam/rocketbox/LICENSE-Rocketbox.md`），出處見 [`moto-exam/README.md`](moto-exam/README.md)。
