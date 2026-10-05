@@ -7,12 +7,13 @@
 | 折面投影台 | 投影映射（projection mapping）工具：把霓虹線稿、閃電色塊、角色和標題，依節拍「貼」到立體牆的每一個面上 | [線上試玩](https://claude.ai/artifact/PaJBhVFvgLgJ1oABgDFxBK) | [`facetstage/`](facetstage/) |
 | 滲 nijimi | 互動流體：手指或滑鼠劃過，發光的墨水就在水裡暈開、捲起渦流 | [線上試玩](https://claude.ai/artifact/4dQbrVv67LmNcpPGc5u4dy) | [`nijimi/`](nijimi/) |
 | 台灣機車考照 | 3D 機車路考：照官方場地與評分基準的 8 關考場，蓋在 OpenStreetMap 重建的台北 101 街區裡 | [線上試玩](https://claude.ai/artifact/6PFPH74kLhbx72MrF8YM3H) | [`moto-exam/`](moto-exam/) |
+| ArrowKing 箭王之戰 | 3D 守城塔防，四關：英雄跑位自動攻擊、蓋塔、三選一強化、三個技能、永久升級 | [線上試玩](https://claude.ai/artifact/JhqDAgmEbjhKS1EeaQVRgn) | [`arrowking/`](arrowking/) |
 
 線上試玩是 claude.ai 的 Artifact 頁面，第一次開啟可能要登入 claude.ai；也可以直接 clone 下來開各資料夾的 `index.html`（`moto-exam/` 要用靜態伺服器，見下）。
 
-| 折面投影台 | 滲 nijimi | 台灣機車考照 |
-|---|---|---|
-| ![](facetstage/shots/phone_3_dragged_lowpoly.png) | ![](nijimi/shots/contact_sheet.png) | ![](moto-exam/shots/play.jpg) |
+| 折面投影台 | 滲 nijimi | 台灣機車考照 | ArrowKing 箭王之戰 |
+|---|---|---|---|
+| ![](facetstage/shots/phone_3_dragged_lowpoly.png) | ![](nijimi/shots/contact_sheet.png) | ![](moto-exam/shots/play.jpg) | ![](arrowking/media/arrowking.gif) |
 
 ### 自己架（GitHub Pages）
 
@@ -59,6 +60,17 @@
 - 8 關依序：直線平衡（15 m × 40 cm，至少 7 秒）→ 斑馬線 → 交岔路口 → 二段式轉彎 → 變換車道 → 直角轉彎 → 停車再開 → 平交道。滿分 100、70 分及格，扣 32 分的項目犯一次就不及格。
 - 操作：W/S 油門煞車、A/D 轉向、Q/E 方向燈、C 擺頭察看、F 腳著地、N 日夜、R 重新挑戰；手機有觸控按鈕。
 - 評分依據：行政院公報第 030 卷第 080 期（2024-05-01）《普通重型及輕型機車駕駛人路考評分基準》。地圖 © OpenStreetMap contributors（ODbL）；人物模型 Microsoft Rocketbox（MIT）。這是打包好的發布版（three.js），沒有附原始碼。
+
+## ArrowKing 箭王之戰
+
+線上試玩：<https://claude.ai/artifact/JhqDAgmEbjhKS1EeaQVRgn>
+
+打開 `arrowking/index.html`（單一檔案，three.js 與字型從 CDN 載入，需要網路）。詳細說明、截圖與錄影在 [`arrowking/README.md`](arrowking/README.md)。
+
+- 直式 3D 守城塔防：拖曳或 WASD 移動英雄，靠近敵人自動攻擊；點價格格或踩格建塔；升級時三選一強化。
+- 技能：冰箭（Q/1）、火箭（E/2）、天降箭雨（R/3，Lv.5 解鎖）。
+- 四關：綠野平原、雪地山脈、沙漠遺跡、黑暗要塞，各 10 波加 Boss；星級評價與王國永久升級。
+- three.js r160、全部程式建模、Web Audio 合成音效。玩法參考守城塔防類手遊，非官方作品。3D 模型、美術與音效皆為程式生成。
 
 ## 測試工具
 
