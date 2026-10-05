@@ -6,7 +6,9 @@
 
 ## 怎麼開
 
-這是 Vite 打包好的靜態網站（ES module ＋ `fetch` 載入人物模型），**不能直接雙擊 `index.html`**，要用任一個靜態伺服器：
+**線上試玩**：<https://claude.ai/artifact/6PFPH74kLhbx72MrF8YM3H>（claude.ai 的 Artifact 頁面，第一次開啟可能要登入 claude.ai）。
+
+要在本機跑：這是 Vite 打包好的靜態網站（ES module ＋ `fetch` 載入人物模型），**不能直接雙擊 `index.html`**，要用任一個靜態伺服器：
 
 ```bash
 cd moto-exam
